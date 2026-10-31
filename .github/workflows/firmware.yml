@@ -59,12 +59,16 @@ jobs:
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           commit=$(git -C source rev-parse HEAD)
           version="0.0.0-candidate.${commit:0:12}"
           if [ "$REF_TYPE" = tag ]; then version="${REF_NAME#v}"; fi
-          python3 source/tools/release-docker.py --sdk "$PWD/sdk" --out "$RUNNER_TEMP/firmware" --version "$version"
+          # A pull request also builds the image several ways, to check each has its own ID.
+          extra=()
+          if [ "$EVENT" = pull_request ]; then extra=(--test-build-id); fi
+          python3 source/tools/release-docker.py --sdk "$PWD/sdk" --out "$RUNNER_TEMP/firmware" --version "$version" "${extra[@]}"
       # Every candidate is attested, so the gate can check the zips it installs; publish
       # releases these same zips.
       - uses: actions/attest-build-provenance@v4
