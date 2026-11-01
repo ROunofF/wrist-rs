@@ -35,6 +35,7 @@ const SPECS: [Spec; 3] = [
     Spec {
         name: "view",
         bus: "I2C1",
+        // The module's own record: an LS014 fitted to the same module still reads LS012.
         expects: "LS012",
         drives: "the panel (lcd.rs)",
         without: "nothing drawn, VCOM not started",

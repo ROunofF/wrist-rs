@@ -2,7 +2,7 @@
 //! register a tick of TIM3's compares (`BCK`, `GEN`), `GCK`, `GSP`, TIM1's one pulse (`BSP`),
 //! and TIM3's stop.
 
-use crate::{timing, BCK_EDGES, GCK_EDGES, LAST_WRITTEN, LINES, PAIRS};
+use crate::{limits, timing, BCK_EDGES, GCK_EDGES, LAST_WRITTEN, LINES, PAIRS, TAIL_FROM};
 
 /// TIM1's and TIM3's clock.
 pub const TIMER_HZ: u32 = 48_000_000;
@@ -64,39 +64,44 @@ pub struct Latency {
 
 /// As `page bus probe` and `pins` measure them (`HARDWARE.md`, GPDMA).
 pub const LATENCY: Latency = Latency { e_write: (3, 9), d_write: (11, 14), e_link: 2, d_link: 2, tim1: (0, 3) };
+/// The LS014 needs 330 ns of data either side of an edge, so a tick of 38 cycles (792 ns) at
+/// this latency: above its typical 670 ns, which leaves no room for `E`'s jitter.
+#[cfg(not(feature = "ls014"))]
 pub const BUS: Bus = Bus::new(26, 19);
+#[cfg(feature = "ls014")]
+pub const BUS: Bus = Bus::new(38, 25);
 
 /// Whether `bus` keeps Table 6-3-3's minimums at every latency in `lat`.
 #[must_use]
 pub const fn keeps(bus: &Bus, lat: &Latency) -> bool {
     let (min, max) = lat.e_write;
-    keeps_timer(bus, lat) && bus.edge >= max + cycles(200) && bus.half - bus.edge + min >= cycles(200)
+    keeps_timer(bus, lat) && bus.edge >= max + cycles(limits::TS_RGB) && bus.half - bus.edge + min >= cycles(limits::TH_RGB)
 }
 
 /// All of [`keeps`] but the data window: `BCK`, `BSP`, and both channels keeping up, an item
 /// loaded straight after the last transfer of the one before.
 #[must_use]
 pub const fn keeps_timer(bus: &Bus, lat: &Latency) -> bool {
-    let (h, edge, ns200) = (bus.half, bus.edge, cycles(200));
+    let (h, edge, bsp) = (bus.half, bus.edge, cycles(limits::TS_BSP));
     let (rise, fall) = bus.bsp();
     let (early, late) = (bus.ctrl + lat.d_write.0 + lat.tim1.0, bus.ctrl + lat.d_write.1 + lat.tim1.1);
     let first = 3 * h + edge;
-    h >= cycles(400)
+    h >= cycles(limits::TW_BCK)
         && edge < h
         && bus.ctrl + lat.d_write.1 < h
         && lat.e_link + 2 * lat.e_write.1 <= 2 * h
         && lat.d_link + 2 * lat.d_write.1 <= 2 * h
-        && first >= late + rise + ns200
-        && early + fall >= first + ns200
-        && first + 2 * h >= late + fall + ns200
+        && first >= late + rise + bsp
+        && early + fall >= first + bsp
+        && first + 2 * h >= late + fall + bsp
 }
 
 const _: () = assert!(keeps(&BUS, &LATENCY), "tsRGB, thRGB, thwBCK, thsBSP, tlsBSP");
 
 /// `thwGCK` over a written plane, `thwGEN`, and `thhGCK` (Table 6-3-2), each kept with a tick to spare.
-const THW_GCK: u32 = 62_670;
-const THW_GEN: u32 = 9_670;
-const THH_GCK: u32 = 4_000;
+const THW_GCK: u32 = limits::THW_GCK;
+const THW_GEN: u32 = limits::THW_GEN;
+const THH_GCK: u32 = limits::THH_GCK;
 
 pub const GPIOA_BSRR: u32 = 0x4202_0018;
 pub const GPIOA_BRR: u32 = 0x4202_0028;
@@ -340,6 +345,7 @@ impl<'a> Builder<'a> {
         match edge {
             3..=LAST_WRITTEN if dirty[line] => self.plane(to, T_GCK, line, edge.is_multiple_of(2)),
             GCK_EDGES => self.edge_write(to, T_GCK, self.waits[3]),
+            _ if edge >= TAIL_FROM => self.edge_write(to, T_GCK, self.waits[1]),
             _ => self.edge_write(to, T_GCK, self.waits[2]),
         }
     }

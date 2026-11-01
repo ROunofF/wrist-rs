@@ -9,6 +9,8 @@ publish = false
 [features]
 # PNGs of the tests' cases.
 preview = ["inscribed-disc/preview"]
+# The 280 x 280 LS014B7DD01 glass in place of the LS012B7DD06A's 240 x 240.
+ls014 = []
 
 [dependencies]
 inscribed-disc = { version = "0.2.1", default-features = false, features = ["embedded-graphics", "abgr2222"] }

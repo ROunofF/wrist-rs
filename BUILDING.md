@@ -22,6 +22,9 @@ rustup component add llvm-tools
 `cargo build --release --features usb-log` also keeps `embassy-usb`'s own log of the link,
 which the console's `usblog` prints. `--features ble` adds the console and updates over
 Bluetooth ([below](#bluetooth)); release images are built without it.
+`--features panel-ls014` drives a Sharp LS014B7DD01 (280 × 280) fitted to the display module
+in place of the LS012 ([HARDWARE.md](HARDWARE.md#the-module-eeprom)); `cargo test -p wrist-panel -p
+wrist-glass --features wrist-panel/ls014,wrist-glass/ls014` checks it on the host.
 
 The console's `version` prints the image's build ID: 12 hex digits hashing the tracked
 files that go into the binaries, listed in [release/build-inputs.txt](release/build-inputs.txt),

@@ -113,7 +113,11 @@ const DATA_AT: u32 = 0x201C_0000;
 const SRAM5_TOP_PAGE: u32 = 0x2026_0000;
 /// `D`'s list and sources, in SRAM2, which neither the CPU nor `E` touches during a frame.
 const SRAM2_D_AT: u32 = 0x200C_0000;
+/// The LS014's longer frame needs more of `D`'s list, so its sources start higher.
+#[cfg(not(feature = "panel-ls014"))]
 const SRAM2_TABLE_AT: u32 = 0x200C_C400;
+#[cfg(feature = "panel-ls014")]
+const SRAM2_TABLE_AT: u32 = 0x200C_E400;
 const SRAM2_END: u32 = 0x200D_0000;
 const SRAM2EN: u32 = 1 << 30;
 const _: () = assert!(4 * dma::D_WORDS <= (SRAM2_TABLE_AT - SRAM2_D_AT) as usize);
