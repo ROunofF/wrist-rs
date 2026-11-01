@@ -61,12 +61,17 @@ The watch runs an earlier wrist-rs.
    time` shows no zone record.
 6. `cmd report 10`, under `[step] park`: SDMMC1 now off, the unused lines analog, RTC
    alarm A off, unused SRAM off in Stop with the SRAM bits of
-   [`apps/standalone-boot/src/mmio.rs`](../apps/standalone-boot/src/mmio.rs) set in `PWR_CR2` and `PWR_CR4`, and the IMU and
-   compass reset to suspend. Under `-- clocks on --`: `ICACHE_CR_EN` set and
+   [`apps/standalone-boot/src/mmio.rs`](../apps/standalone-boot/src/mmio.rs) set in `PWR_CR2` and `PWR_CR4`, the IMU and
+   compass reset to suspend, and `HAPTIC_RST_N (PF2) low, output`: the vibration motor's
+   driver in reset. Under `-- clocks on --`: `ICACHE_CR_EN` set and
    `RCC_AHB2ENR1_SDMMC1EN` clear (`mmio.rs`).
 7. `cmd modules`: each of `view`, `link1` and `link2` reads `expected`. `cmd "page lag 10"`, wait ten seconds, then
    `cmd page`: the longest time a task kept the executor is a few milliseconds at most.
    `cmd "page bus"`: the bus keeps the data window, and `failed 0`.
+   The vibration motor: `cmd haptic` ends with the probe, `CHIP_ID 13 (DRV2625 rev 3)`, each
+   register as written and `PF2 low`. Wearing the watch, `cmd "haptic alarm"`: a buzz about
+   twice a second, felt on the wrist. Within the minute, `cmd "haptic stop"`: the buzzing
+   stops and the console says `alarm stopped after … ms`, ending `PF2 low`.
 8. Buttons. A short press of each of Up, Down, Back and Select lights the face. `cmd "page
    light on"`, then a short press: the light goes off, and the next press lights the face
    for 3 s. Pages: from the face, Down shows the battery (the charge, the voltage, `input
@@ -128,7 +133,8 @@ rest is unplugging, waiting and plugging back in.
     mean current, charge at each end and the gauge's time to empty; `unanswered input
     reads in a row 0; Stop follows the input`. `stop2_wakes` divided
     by that length in minutes is the wake rate on battery: expect about thirty-six a minute, from
-    the time driver every 2 s, the watchdog's feed every 16 s and the minute's redraw.
+    the time driver every 2 s, the watchdog's feed every 16 s and the minute's redraw; the
+    vibration motor's driver, in reset, adds none.
     `PWR_INT_L` reads high, and `input interrupts` has gone up by two, the unplug and the
     plug. Under `[lptim]`: `alarms handled over 5 ms late 0`, `Stop entered with one
     unacknowledged 0` and `waits over 2 ms: DIEROK 0, CMPOK 0`; a late alarm is a press
