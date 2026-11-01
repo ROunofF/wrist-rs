@@ -32,11 +32,13 @@ const VA: (u32, u32) = (GPIOD_BASE, 14); // XFRP
 const AF_LPTIM1_CH1: u32 = 1;
 const AF_LPTIM3_CH1: u32 = 14;
 
-pub const WIDTH: u32 = 240;
-pub const HEIGHT: u32 = 240;
+#[allow(clippy::cast_possible_truncation)]
+pub const WIDTH: u32 = wrist_panel::LINES as u32;
+pub const HEIGHT: u32 = WIDTH;
 const LINES: usize = wrist_panel::LINES;
 const PAIRS: usize = wrist_panel::PAIRS;
-const GCK_EDGES: u32 = 483;
+const GCK_EDGES: u32 = wrist_panel::GCK_EDGES;
+const LAST_WRITTEN: u32 = wrist_panel::LAST_WRITTEN;
 /// Kept lines fast-forwarded between yields.
 const FAST_RUN: u32 = 32;
 
@@ -346,7 +348,7 @@ impl Lcd {
                 pace.after(cycles(timing::GSP_SETUP), || set(GSP, false));
             }
             let line = (edge as usize).wrapping_sub(2) / 2;
-            if (2..=481).contains(&edge) && dirty[line] {
+            if (2..=LAST_WRITTEN).contains(&edge) && dirty[line] {
                 // The MSB plane, on the even edge, comes first.
                 let plane = usize::from(edge % 2 == 0);
                 if plane == 1 {
@@ -372,7 +374,7 @@ impl Lcd {
                 step = crate::busy::cycles();
             }
         }
-        // `GCK` 483's half-period and thhINTB, then thwINTB and tlwINTB (Table 6-3-2).
+        // The last `GCK` edge's half-period and thhINTB, then thwINTB and tlwINTB (Table 6-3-2).
         pace.wait(2 * cycles(timing::GCK_HALF));
         cost.end_step(step);
         Timer::at(start + INTB_HIGH).await;
