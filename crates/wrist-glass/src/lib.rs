@@ -34,15 +34,16 @@ pub fn ring<D: DrawTarget<Color = Abgr2222>>(target: &mut D) {
     .draw(target);
 }
 
-/// Each row's ring pixels, left run then right, as [`ring`] draws them on the glass.
+/// Each row's ring pixels, left run then right, as [`ring`] draws them on the glass; `u16`, so
+/// a row may be wider than 255.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-pub static RING_RUNS: [[(u8, u8); 2]; HEIGHT as usize] = {
+pub static RING_RUNS: [[(u16, u16); 2]; HEIGHT as usize] = {
     let (w, h) = (WIDTH as i32, HEIGHT as i32);
     let diameter = w - 2 * RING_INSET;
     let centre_2x = 2 * RING_INSET + diameter - 1;
     let outer = diameter + 2 * (RING_STROKE as i32 / 2);
     let inner = diameter - 2 * ((RING_STROKE as i32 + 1) / 2);
-    let mut runs = [[(0u8, 0u8); 2]; HEIGHT as usize];
+    let mut runs = [[(0u16, 0u16); 2]; HEIGHT as usize];
     let mut y = 0;
     while y < h {
         let mut run = 0;
@@ -53,10 +54,10 @@ pub static RING_RUNS: [[(u8, u8); 2]; HEIGHT as usize] = {
             let d2 = dx * dx + dy * dy;
             let on = x < w && d2 < outer * outer && d2 >= inner * inner && inscribed_disc::geometry::is_lit(x, y, w, h);
             if on && !inside && run < 2 {
-                runs[y as usize][run].0 = x as u8;
+                runs[y as usize][run].0 = x as u16;
             }
             if !on && inside && run < 2 {
-                runs[y as usize][run].1 = x as u8;
+                runs[y as usize][run].1 = x as u16;
                 run += 1;
             }
             inside = on;

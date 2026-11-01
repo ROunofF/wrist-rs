@@ -5,9 +5,22 @@
 
 pub mod dma;
 
+/// Gate lines, one a screen column; the panel is square, so also the pixels a line holds.
 pub const LINES: usize = 240;
 /// Pixel pairs a line shifts in, top pair first.
-pub const PAIRS: usize = 120;
+pub const PAIRS: usize = LINES / 2;
+/// `GCK` edges a frame makes (Figure 6-5-1).
+#[allow(clippy::cast_possible_truncation)]
+pub const GCK_EDGES: u32 = 2 * LINES as u32 + 3;
+/// The last `GCK` edge that writes a plane: line `l`'s MSB plane follows edge `2l + 2`, its LSB
+/// plane edge `2l + 3`.
+#[allow(clippy::cast_possible_truncation)]
+pub const LAST_WRITTEN: u32 = 2 * LINES as u32 + 1;
+/// `BCK` edges a written plane makes: `BSP`'s, then one for each pair and three more, which
+/// latch too (`HARDWARE.md`).
+pub const BCK_EDGES: usize = PAIRS + 4;
+/// Bus words a plane latches, on `BCK` edges 2 onwards.
+pub const LATCHED: usize = BCK_EDGES - 1;
 
 /// Port E: the odd pixel of a pair on bits 0, 2 and 4 (R, G, B), the even one 8 bits up.
 pub const DATA_MASK: u32 = 0x1515;
@@ -91,7 +104,9 @@ pub mod timing {
     pub const INTB_HIGH_MS: u32 = 31;
     pub const INTB_LOW: u32 = 12_000;
     /// What one plane of a written line holds `GCK` for, at the least.
-    pub const WRITTEN_HALF: u32 = BSP_SETUP + 123 * (DATA_HOLD + DATA_SETUP) + GEN_SETUP + GEN_HIGH + GEN_HOLD;
+    #[allow(clippy::cast_possible_truncation)]
+    pub const WRITTEN_HALF: u32 =
+        BSP_SETUP + super::LATCHED as u32 * (DATA_HOLD + DATA_SETUP) + GEN_SETUP + GEN_HIGH + GEN_HOLD;
 
     const _: () = {
         assert!(DATA_HOLD >= 200 && DATA_SETUP >= 200, "thRGB, tsRGB");
