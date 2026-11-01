@@ -69,10 +69,10 @@ jobs:
             --cargo-home "$PWD/cargo-home"
       # Incremental state is redone for every change, so it is not kept.
       - name: Trim the build cache
-        if: steps.cache.outcome == 'success' && steps.cache.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.cache.outcome == 'success' && steps.cache.outputs.cache-hit != 'true' && (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main')
         run: rm -rf source/target/debug/incremental
       - name: Save the build cache
-        if: steps.cache.outcome == 'success' && steps.cache.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.cache.outcome == 'success' && steps.cache.outputs.cache-hit != 'true' && (github.event_name == 'pull_request' || github.event_name == 'push' && github.ref == 'refs/heads/main')
         uses: actions/cache/save@v6
         with:
           path: |
