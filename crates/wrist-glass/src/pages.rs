@@ -9,7 +9,7 @@ use wrist_l10n::Msg;
 
 use crate::scene::Scene;
 use crate::text::{Font, Glass, Line, Overflow};
-use crate::{ring, HEIGHT, RING_COLOR, RING_RUNS, WIDTH};
+use crate::{ring, HEIGHT, RING_COLOR, RING_RUNS, ROW_SHIFT, WIDTH};
 
 #[allow(clippy::cast_possible_wrap)]
 const W: i32 = WIDTH as i32;
@@ -85,10 +85,10 @@ impl Builder {
     }
 }
 
-const FACE_DATE: i32 = 84;
-const FACE_TIME: i32 = 143;
-const FACE_BATT: i32 = 175;
-const FACE_ALARM: i32 = 205;
+const FACE_DATE: i32 = 84 + ROW_SHIFT;
+const FACE_TIME: i32 = 143 + ROW_SHIFT;
+const FACE_BATT: i32 = 175 + ROW_SHIFT;
+const FACE_ALARM: i32 = 205 + ROW_SHIFT;
 
 #[must_use]
 pub fn compose(status: &Status, locale: &Locale, faces: &Faces) -> (Glass, Short) {
@@ -130,15 +130,15 @@ pub struct About<'a> {
     pub crc: Option<u32>,
 }
 
-const TITLE: i32 = 79;
-const BATT_PCT: i32 = 123;
-const BATT_MV: i32 = 157;
-const BATT_INPUT: i32 = 185;
-const ABOUT_NAME: i32 = 109;
-const ABOUT_VERSION: i32 = 137;
-const ABOUT_BUILD: i32 = 160;
-const ABOUT_SUFFIX: i32 = 180;
-const ABOUT_CRC: i32 = 202;
+const TITLE: i32 = 79 + ROW_SHIFT;
+const BATT_PCT: i32 = 123 + ROW_SHIFT;
+const BATT_MV: i32 = 157 + ROW_SHIFT;
+const BATT_INPUT: i32 = 185 + ROW_SHIFT;
+const ABOUT_NAME: i32 = 109 + ROW_SHIFT;
+const ABOUT_VERSION: i32 = 137 + ROW_SHIFT;
+const ABOUT_BUILD: i32 = 160 + ROW_SHIFT;
+const ABOUT_SUFFIX: i32 = 180 + ROW_SHIFT;
+const ABOUT_CRC: i32 = 202 + ROW_SHIFT;
 /// Twelve hex digits.
 const ID_CHARS: usize = 12;
 

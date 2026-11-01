@@ -1,26 +1,91 @@
 #![no_std]
 
-//! The Sharp LS012B7DD06A's pixel bus as this board wires it, and the timing the driver keeps
-//! (LCP-2619063C, `HARDWARE.md`).
+//! The Sharp memory LCD's pixel bus as this board wires it, and the timing the driver keeps
+//! (`HARDWARE.md`): the LS012B7DD06A (LCP-2619063C) the watch ships with, or with the `ls014`
+//! feature the larger LS014B7DD01 (LCP-0620031B), whose 21-pin FPC carries the same signals on
+//! the same pins.
 
 pub mod dma;
 
 /// Gate lines, one a screen column; the panel is square, so also the pixels a line holds.
+#[cfg(not(feature = "ls014"))]
 pub const LINES: usize = 240;
+#[cfg(feature = "ls014")]
+pub const LINES: usize = 280;
 /// Pixel pairs a line shifts in, top pair first.
 pub const PAIRS: usize = LINES / 2;
-/// `GCK` edges a frame makes (Figure 6-5-1).
-#[allow(clippy::cast_possible_truncation)]
-pub const GCK_EDGES: u32 = 2 * LINES as u32 + 3;
 /// The last `GCK` edge that writes a plane: line `l`'s MSB plane follows edge `2l + 2`, its LSB
 /// plane edge `2l + 3`.
 #[allow(clippy::cast_possible_truncation)]
 pub const LAST_WRITTEN: u32 = 2 * LINES as u32 + 1;
+/// The first `GCK` edge after the last line's, which keeps a full half-period like edges 1 and
+/// 2; the edge between is fast-forwarded (LS014 Figure 6-5-3).
+pub const TAIL_FROM: u32 = LAST_WRITTEN + 2;
+/// `GCK` edges a frame makes (Figure 6-5-1): the LS012's ends at 483, the LS014's runs on to 568.
+#[cfg(not(feature = "ls014"))]
+pub const GCK_EDGES: u32 = TAIL_FROM;
+#[cfg(feature = "ls014")]
+pub const GCK_EDGES: u32 = TAIL_FROM + 5;
 /// `BCK` edges a written plane makes: `BSP`'s, then one for each pair and three more, which
-/// latch too (`HARDWARE.md`).
+/// latch too (`HARDWARE.md`; the LS014's Figure 6-5-2 numbers them 1 to 144).
 pub const BCK_EDGES: usize = PAIRS + 4;
 /// Bus words a plane latches, on `BCK` edges 2 onwards.
 pub const LATCHED: usize = BCK_EDGES - 1;
+
+const _: () = assert!(GCK_EDGES == if LINES == 240 { 483 } else { 568 } && BCK_EDGES == if LINES == 240 { 124 } else { 144 });
+
+/// The panel's minimums in nanoseconds, from Tables 6-3-2 and 6-3-3 of its datasheet. The
+/// LS014's tables also give maximums; they are the typical values plus about 1.5 %, and its
+/// own partial update (Figure 6-5-3) holds `INTB` high for less than "the maximum", so only the
+/// minimums are kept.
+pub mod limits {
+    #[cfg(not(feature = "ls014"))]
+    mod panel {
+        pub const TS_RGB: u32 = 200;
+        pub const TH_RGB: u32 = 200;
+        pub const TW_BCK: u32 = 400;
+        pub const TS_BSP: u32 = 200;
+        pub const THW_GEN: u32 = 9_670;
+        pub const THH_GCK: u32 = 4_000;
+        pub const THW_GCK: u32 = 62_670;
+        pub const THS_INTB: u32 = 10_000;
+        pub const THS_GSP: u32 = 10_000;
+        pub const THH_INTB: u32 = 62_670;
+        pub const THW_INTB: u32 = 30_300_000;
+        pub const TLW_INTB: u32 = 10_000;
+    }
+    #[cfg(feature = "ls014")]
+    mod panel {
+        pub const TS_RGB: u32 = 330;
+        pub const TH_RGB: u32 = 330;
+        pub const TW_BCK: u32 = 660;
+        pub const TS_BSP: u32 = 330;
+        pub const THW_GEN: u32 = 29_000;
+        /// thGCK1, `GEN` to `GCK`.
+        pub const THH_GCK: u32 = 19_100;
+        pub const THW_GCK: u32 = 95_040;
+        pub const THS_INTB: u32 = 23_760;
+        pub const THS_GSP: u32 = 47_520;
+        /// From `GCK` 563.
+        pub const THH_INTB: u32 = 308_880;
+        pub const THW_INTB: u32 = 53_790_000;
+        pub const TLW_INTB: u32 = 190_080;
+    }
+    /// Data set up before a `BCK` edge, and held after it.
+    pub use panel::{TH_RGB, TS_RGB};
+    /// A `BCK` half-period, and `BSP` either side of `BCK`'s first edge.
+    pub use panel::{TS_BSP, TW_BCK};
+    /// `GEN` high, then low before the next `GCK` edge.
+    pub use panel::{THH_GCK, THW_GEN};
+    /// A `GCK` half-period over a written plane, or edge 1, 2 or the tail's.
+    pub use panel::THW_GCK;
+    /// `INTB` to `GSP`, then `GSP` either side of `GCK`'s first edges.
+    pub use panel::{THS_GSP, THS_INTB};
+    /// `INTB` high after [`super::TAIL_FROM`], high for the frame, then low.
+    pub use panel::{THH_INTB, THW_INTB, TLW_INTB};
+    /// A fast-forwarded `GCK` half-period (Note 6-3-1).
+    pub const TFAST_GCK: u32 = 1_000;
+}
 
 /// Port E: the odd pixel of a pair on bits 0, 2 and 4 (R, G, B), the even one 8 bits up.
 pub const DATA_MASK: u32 = 0x1515;
@@ -83,42 +148,66 @@ impl<C: Clock> Pace<C> {
 /// The end of a wait [`Pace::after`] spins masked, so a short wait ends on time.
 const MASKED_SPIN: u32 = 48;
 
-/// Nanoseconds, against the minimums of Tables 6-3-2 and 6-3-3.
+/// Nanoseconds the bit-banged driver keeps, each at or above its [`limits`].
 pub mod timing {
+    use super::limits;
+
+    #[cfg(not(feature = "ls014"))]
+    mod panel {
+        pub const DATA_HOLD: u32 = 300;
+        pub const DATA_SETUP: u32 = 300;
+        pub const GEN_HIGH: u32 = 11_000;
+        pub const GEN_HOLD: u32 = 5_000;
+        pub const GCK_HALF: u32 = 70_000;
+        pub const GSP_SETUP: u32 = 12_000;
+        pub const INTB_HIGH_MS: u32 = 31;
+        pub const INTB_LOW: u32 = 12_000;
+    }
+    #[cfg(feature = "ls014")]
+    mod panel {
+        pub const DATA_HOLD: u32 = 350;
+        pub const DATA_SETUP: u32 = 350;
+        pub const GEN_HIGH: u32 = 31_000;
+        pub const GEN_HOLD: u32 = 20_000;
+        pub const GCK_HALF: u32 = 100_000;
+        pub const GSP_SETUP: u32 = 50_000;
+        pub const INTB_HIGH_MS: u32 = 55;
+        pub const INTB_LOW: u32 = 200_000;
+    }
     /// Data held after a `BCK` edge, then set up before the next: a half-period is both.
-    pub const DATA_HOLD: u32 = 300;
-    pub const DATA_SETUP: u32 = 300;
+    pub use panel::{DATA_HOLD, DATA_SETUP};
+    /// `GEN` high, then low before the next `GCK` edge.
+    pub use panel::{GEN_HIGH, GEN_HOLD};
+    /// A `GCK` half-period with no line written, and the last edge to `INTB` low.
+    pub use panel::GCK_HALF;
+    /// `INTB` to `GSP`, and `GSP` either side of `GCK`'s first edges.
+    pub use panel::GSP_SETUP;
+    pub use panel::{INTB_HIGH_MS, INTB_LOW};
     /// `BSP` high before `BCK`'s first edge.
     pub const BSP_SETUP: u32 = 1_000;
     /// `BCK` parked low, then `GEN` high.
     pub const GEN_SETUP: u32 = 1_000;
-    pub const GEN_HIGH: u32 = 11_000;
-    /// `GEN` low before the next `GCK` edge.
-    pub const GEN_HOLD: u32 = 5_000;
-    /// A `GCK` half-period with no line written, and `GCK` 483 to `INTB` low.
-    pub const GCK_HALF: u32 = 70_000;
     /// A `GCK` half-period over a line a partial frame keeps.
     pub const GCK_FAST: u32 = 2_000;
-    /// `INTB` to `GSP`, and `GSP` either side of `GCK`'s first edges.
-    pub const GSP_SETUP: u32 = 12_000;
-    pub const INTB_HIGH_MS: u32 = 31;
-    pub const INTB_LOW: u32 = 12_000;
     /// What one plane of a written line holds `GCK` for, at the least.
     #[allow(clippy::cast_possible_truncation)]
     pub const WRITTEN_HALF: u32 =
         BSP_SETUP + super::LATCHED as u32 * (DATA_HOLD + DATA_SETUP) + GEN_SETUP + GEN_HIGH + GEN_HOLD;
+    /// From [`super::TAIL_FROM`] to `INTB` low: the tail's half-periods, then two more.
+    pub const TAIL: u32 = (super::GCK_EDGES - super::TAIL_FROM + 2) * GCK_HALF;
 
     const _: () = {
-        assert!(DATA_HOLD >= 200 && DATA_SETUP >= 200, "thRGB, tsRGB");
-        assert!(DATA_HOLD + DATA_SETUP >= 400, "thwBCK, tlwBCK");
-        assert!(BSP_SETUP >= 200 && DATA_HOLD >= 200, "thsBSP, tlsBSP");
-        assert!(GEN_HIGH >= 9_670, "thwGEN");
-        assert!(GEN_HOLD >= 4_000, "thhGCK");
-        assert!(GCK_HALF >= 62_670 && WRITTEN_HALF >= 62_670, "thwGCK, tlwGCK, thhINTB");
-        assert!(GCK_FAST >= 1_000, "Note 6-3-1");
-        assert!(GSP_SETUP >= 10_000, "thsGSP, tlsGSP");
-        assert!(INTB_HIGH_MS * 1_000_000 >= 30_300_000, "thwINTB");
-        assert!(INTB_LOW >= 10_000, "tlwINTB");
+        assert!(DATA_HOLD >= limits::TH_RGB && DATA_SETUP >= limits::TS_RGB, "thRGB, tsRGB");
+        assert!(DATA_HOLD + DATA_SETUP >= limits::TW_BCK, "thwBCK, tlwBCK");
+        assert!(BSP_SETUP >= limits::TS_BSP && DATA_HOLD >= limits::TS_BSP, "thsBSP, tlsBSP");
+        assert!(GEN_HIGH >= limits::THW_GEN, "thwGEN");
+        assert!(GEN_HOLD >= limits::THH_GCK, "thhGCK");
+        assert!(GCK_HALF >= limits::THW_GCK && WRITTEN_HALF >= limits::THW_GCK, "thwGCK, tlwGCK");
+        assert!(TAIL >= limits::THH_INTB, "thhINTB");
+        assert!(GCK_FAST >= limits::TFAST_GCK, "Note 6-3-1");
+        assert!(GSP_SETUP >= limits::THS_GSP && GSP_SETUP >= limits::THS_INTB, "thsINTB, thsGSP, tlsGSP");
+        assert!(INTB_HIGH_MS * 1_000_000 >= limits::THW_INTB, "thwINTB");
+        assert!(INTB_LOW >= limits::TLW_INTB, "tlwINTB");
     };
 }
 

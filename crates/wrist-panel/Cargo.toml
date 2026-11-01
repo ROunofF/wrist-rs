@@ -6,5 +6,9 @@ license = "AGPL-3.0-or-later"
 publish = false
 description = "The memory LCD's pixel bus and timing"
 
+[features]
+# The LS014B7DD01 (280 x 280) in place of the LS012B7DD06A.
+ls014 = []
+
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

@@ -1,4 +1,4 @@
-//! The lists run on a model of GPDMA1, TIM3 and TIM1 as `HARDWARE.md` measures them, every pin's
+﻿//! The lists run on a model of GPDMA1, TIM3 and TIM1 as `HARDWARE.md` measures them, every pin's
 //! edges checked against Tables 6-3-2 and 6-3-3, and what the panel latches.
 #![allow(
     clippy::cast_possible_truncation,
@@ -23,7 +23,7 @@ use super::{
     E_WORDS, CEN, GCK, GPIOA_BRR, GPIOA_BSRR, GPIOB_BRR, GPIOB_BSRR, GPIOE_ODR, GSP, LATENCY, OPM, TABLE_HALFWORDS, TIM1_CR1,
     TIM3_CR1,
 };
-use crate::{word, BCK_EDGES, DATA_MASK, GCK_EDGES, LAST_WRITTEN, LATCHED, LINES, PAIRS};
+use crate::{limits, word, BCK_EDGES, DATA_MASK, GCK_EDGES, LAST_WRITTEN, LATCHED, LINES, PAIRS, TAIL_FROM};
 
 const D_AT: u32 = 0x201A_0000;
 const E_AT: u32 = 0x201B_0000;
@@ -132,7 +132,7 @@ fn decode(ch: &Channel, mem: &Mem) -> Result<Vec<Service>, String> {
             }
             let (bytes, blocks) = (br1 & 0xFFFF, (br1 >> 16 & 0x7FF) + 1);
             if bytes % (sdw * sbl) != 0 {
-                return Err(format!("block of {bytes} bytes in bursts of {sbl}×{sdw}"));
+                return Err(format!("block of {bytes} bytes in bursts of {sbl}Ã—{sdw}"));
             }
             let (sao, dao) = (tr3 & 0x1FFF, tr3 >> 16 & 0x1FFF);
             let mut first = true;
@@ -401,16 +401,16 @@ fn check(changes: &[Change], end: u64, broken: &mut Vec<String>) -> Latched {
     let from = |pins: &[Change], at: u64| pins.partition_point(|c| c.early < at);
 
     for w in bck.windows(2) {
-        if w[1].early - w[0].late < at_least(400) {
+        if w[1].early - w[0].late < at_least(limits::TW_BCK) {
             flag("thwBCK/tlwBCK", w[1].early);
         }
     }
     let mut next = 0;
     for e in &bck {
-        while next < data.len() && data[next].late + at_least(200) <= e.early {
+        while next < data.len() && data[next].late + at_least(limits::TS_RGB) <= e.early {
             next += 1;
         }
-        if next < data.len() && data[next].early < e.late + at_least(200) {
+        if next < data.len() && data[next].early < e.late + at_least(limits::TH_RGB) {
             flag("tsRGB/thRGB", e.early);
         }
     }
@@ -421,10 +421,10 @@ fn check(changes: &[Change], end: u64, broken: &mut Vec<String>) -> Latched {
             continue;
         };
         let second = bck.get(from(&bck, first.late + 1));
-        if first.early < rise.late + at_least(200) || fall.early < first.late + at_least(200) {
+        if first.early < rise.late + at_least(limits::TS_BSP) || fall.early < first.late + at_least(limits::TS_BSP) {
             flag("thsBSP/tlsBSP", rise.early);
         }
-        if second.is_none_or(|s| s.early < fall.late + at_least(200)) {
+        if second.is_none_or(|s| s.early < fall.late + at_least(limits::TS_BSP)) {
             flag("BSP low before the second edge", fall.early);
         }
     }
@@ -433,13 +433,13 @@ fn check(changes: &[Change], end: u64, broken: &mut Vec<String>) -> Latched {
             flag("GEN left high", pulse[0].early);
             continue;
         };
-        if fall.early < rise.late + at_least(9_670) {
+        if fall.early < rise.late + at_least(limits::THW_GEN) {
             flag("thwGEN", rise.early);
         }
         if bck.get(from(&bck, rise.early)).is_some_and(|e| e.early <= fall.late) {
             flag("tlsGEN: BCK during GEN", rise.early);
         }
-        if gck.get(gck.partition_point(|g| g.late < fall.early)).is_none_or(|g| g.early < fall.late + at_least(4_000)) {
+        if gck.get(gck.partition_point(|g| g.late < fall.early)).is_none_or(|g| g.early < fall.late + at_least(limits::THH_GCK)) {
             flag("thhGCK", fall.early);
         }
     }
@@ -450,10 +450,10 @@ fn check(changes: &[Change], end: u64, broken: &mut Vec<String>) -> Latched {
         flag("GSP is not one pulse", 0);
         return Latched::new();
     }
-    if gsp[0].early < at_least(10_000) || gck[0].early < gsp[0].late + at_least(10_000) {
+    if gsp[0].early < at_least(limits::THS_INTB) || gck[0].early < gsp[0].late + at_least(limits::THS_GSP) {
         flag("INTB to GSP, thsGSP", gsp[0].early);
     }
-    if gsp[1].early < gck[1].late + at_least(10_000) || gsp[1].late > gck[2].early {
+    if gsp[1].early < gck[1].late + at_least(limits::THS_GSP) || gsp[1].late > gck[2].early {
         flag("tlsGSP", gsp[1].early);
     }
     latch([&gck, &bck, &gen, &bsp, &data], end, &mut flag)
@@ -474,8 +474,8 @@ fn latch([gck, bck, gen, bsp, data]: [&[Change]; 5], end: u64, flag: &mut impl F
         let (edges, pulses, rises) =
             (&bck[from(bck, lo)..from(bck, hi)], &gen[from(gen, lo)..from(gen, hi)], &bsp[from(bsp, lo)..from(bsp, hi)]);
         let edge = i + 1;
-        let normal = matches!(edge, 1 | 2) || edge == GCK_EDGES as usize || !pulses.is_empty();
-        let half = if normal { at_least(62_670) } else { at_least(1_000) };
+        let normal = matches!(edge, 1 | 2) || edge >= TAIL_FROM as usize || !pulses.is_empty();
+        let half = if normal { at_least(limits::THW_GCK) } else { at_least(limits::TFAST_GCK) };
         if until < g.late + half {
             flag(&format!("GCK {edge} half-period"), g.early);
         }
@@ -738,10 +738,10 @@ mod tests {
         let dirty = pattern(|l| l % 3 == 0);
         let cases = [
             (BUS, Latency { e_write: (2, 18), ..LATENCY }),
-            (BUS, Latency { d_link: 40, ..LATENCY }),
-            (BUS, Latency { e_link: 60, ..LATENCY }),
-            (Bus::new(22, 16), LATENCY),
-            (BUS, Latency { tim1: (0, 40), ..LATENCY }),
+            (BUS, Latency { d_link: 40 + 2 * (BUS.half - 26), ..LATENCY }),
+            (BUS, Latency { e_link: 60 + 2 * (BUS.half - 26), ..LATENCY }),
+            (Bus::new(BUS.half - 4, BUS.edge - 3), LATENCY),
+            (BUS, Latency { tim1: (0, 40 + BUS.half - 26), ..LATENCY }),
         ];
         for (bus, lat) in cases {
             assert!(!keeps(&bus, &lat), "{bus:?} {lat:?}");
@@ -759,11 +759,27 @@ mod tests {
         }
     }
 
+    /// Buses slower than [`BUS`] at its latency, with the most it may take for a full frame.
+    #[cfg(not(feature = "ls014"))]
+    const SLOWER: [(Bus, f64); 2] = [(Bus::new(32, 24), 52.0), (Bus::new(28, 20), 46.0)];
+    #[cfg(feature = "ls014")]
+    const SLOWER: [(Bus, f64); 2] = [(Bus::new(44, 28), 110.0), (Bus::new(40, 26), 103.0)];
+    /// The most [`BUS`] may take for a full frame, and for a minute's 40 lines.
+    #[cfg(not(feature = "ls014"))]
+    const MOST: (f64, f64) = (44.0, 11.0);
+    #[cfg(feature = "ls014")]
+    const MOST: (f64, f64) = (100.0, 18.0);
+    /// Buses faster than [`BUS`] that keep the datasheet at a lower latency.
+    #[cfg(not(feature = "ls014"))]
+    const FASTER: [Bus; 2] = [Bus::new(24, 17), Bus::new(22, 16)];
+    #[cfg(feature = "ls014")]
+    const FASTER: [Bus; 2] = [Bus::new(36, 23), Bus::new(34, 22)];
+
     #[test]
     fn faster_buses_keep_the_datasheet_at_their_latency() {
         let fb = random_fb(4);
         let lat = Latency { e_write: (4, 6), d_write: (8, 10), e_link: 10, d_link: 10, tim1: (2, 6) };
-        for bus in [Bus::new(24, 17), Bus::new(22, 16)] {
+        for bus in FASTER {
             assert!(keeps(&bus, &lat), "{bus:?}");
             checked(bus, lat, Some(&fb), &pattern(|l| l % 5 != 0));
         }
@@ -772,14 +788,14 @@ mod tests {
     #[test]
     fn frame_times() {
         let fb = random_fb(5);
-        for (bus, most) in [(Bus::new(32, 24), 52.0), (Bus::new(28, 20), 46.0), (BUS, 44.0)] {
+        for (bus, most) in [SLOWER[0], SLOWER[1], (BUS, MOST.0)] {
             assert!(keeps(&bus, &LATENCY), "{bus:?}");
             let ms = |dirty: [bool; LINES]| checked(bus, LATENCY, Some(&fb), &dirty).cycles as f64 / 48_000.0;
             let full = ms(pattern(|_| true));
             let page = ms(pattern(|l| (12..228).contains(&l)));
             let minute = ms(pattern(|l| (60..80).contains(&l) || (150..170).contains(&l)));
             std::println!("{bus:?}: full {full:.2} ms, 216 lines {page:.2} ms, 40 lines {minute:.2} ms");
-            assert!(full < most && minute < 11.0);
+            assert!(full < most && minute < MOST.1, "{full} {minute}");
         }
     }
 }

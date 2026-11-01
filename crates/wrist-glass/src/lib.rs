@@ -13,8 +13,15 @@ use embedded_graphics::prelude::*;
 use embedded_graphics::primitives::{Circle, PrimitiveStyle};
 use inscribed_disc::Abgr2222;
 
+#[cfg(not(feature = "ls014"))]
 pub const WIDTH: u32 = 240;
-pub const HEIGHT: u32 = 240;
+#[cfg(feature = "ls014")]
+pub const WIDTH: u32 = 280;
+pub const HEIGHT: u32 = WIDTH;
+/// Rows the pages sit below where they were laid out, on the 240-pixel glass, so they stay
+/// centred on a larger one at the same size.
+#[allow(clippy::cast_possible_wrap)]
+pub const ROW_SHIFT: i32 = (HEIGHT as i32 - 240) / 2;
 
 /// Centred on the buffer, which is centred on the case (`HARDWARE.md`).
 pub const RING_INSET: i32 = 2;

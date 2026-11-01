@@ -48,10 +48,12 @@ mod tests {
     }
 
     #[test]
-    fn a_black_row_is_one_pair() {
+    fn a_black_row_is_the_fewest_pairs() {
         let mut out = [0u8; MAX_ROW_CODE];
         let n = encode_row(&[0u8; WIDTH as usize], &mut out).unwrap();
-        assert_eq!(&out[..n], &[240, 0]);
+        let rest = u8::try_from(WIDTH.saturating_sub(255)).unwrap();
+        let want: &[u8] = if rest == 0 { &[u8::try_from(WIDTH).unwrap(), 0] } else { &[255, 0, rest, 0] };
+        assert_eq!(&out[..n], want);
     }
 
     #[test]

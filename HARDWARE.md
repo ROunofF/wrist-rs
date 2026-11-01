@@ -258,6 +258,24 @@ ruler pattern drawn on the panel, put the case's centre within
 the photo's own uncertainty. The circle drawn by `wrist-glass` is centred on the case; the
 extra pixels are simply more panel under the glass on one side, and they stay black.
 
+**The LS014B7DD01 as a larger panel** (datasheet LCP-0620031B; nothing here yet seen on a
+watch, so none of it is tagged). A `panel-ls014` image drives it in place of the LS012:
+1.39", 280 × 280 at the same 0.126 mm pitch (φ35.28 mm active), 64 colours over the same
+6-bit bus, two planes a line, odd/even pairs. Its 21-pin FPC carries the same signals on the
+same pins as the LS012's (`GSP` 3, `GCK` 4, `GEN` 5, `INTB` 6, `VB` 7, `VA` 8, `BSP` 11, `BCK`
+12, `R/G/B[0..1]` 13 to 18, `VCOM` 20; 2, 19 and 21 open), so it fits the UNAview module,
+whose EEPROM still names the LS012. A plane is 144 `BCK` labels (140 pairs on 2 to 141); a
+frame is 568 `GCK` edges, line *n* on 2*n* and 2*n*+1, with 562 fast-forwarded and 563 to 568
+full half-periods (Figure 6-5-3). Its minimums are longer than the LS012's: `BCK` half-period
+660 ns with data and `BSP` 330 ns either side, `GCK` over a written plane 95.04 µs, `GEN` 29
+µs then 19.1 µs before the next `GCK`, `INTB` to `GSP` 23.76 µs, `GSP` 47.52 µs either side,
+`INTB` 308.88 µs past `GCK` 563, 53.79 ms high and 190.08 µs low; `VCOM` 0.5 to 66 Hz
+reflective but **54 to 66 Hz transmissive**, so the image runs it at 60 Hz with the light on.
+Its tables also print maximums, the typical value plus about 1.5 % (`BCK` 680 ns, 18.5 Hz
+frames), which its own partial update already exceeds; the image keeps the minimums only,
+and at the GPDMA's measured jitter a `BCK` half-period of 38 cycles (792 ns), so a full frame
+takes about 97 ms by the simulator.
+
 ## The Bluetooth module (BlueNRG-2)
 
 What a `ble` build ([`apps/standalone-boot/src/ble.rs`](apps/standalone-boot/src/ble.rs)) relies on, all **MEASURED** on one watch with

@@ -356,7 +356,9 @@ fn write_page(uart: Uart) {
     write_ms(uart, "[glass] frame: last ", LAST_FRAME_MS.load(Ordering::Relaxed));
     uart.write_str(" for ");
     uart.write_u32(LAST_FRAME_COLUMNS.load(Ordering::Relaxed));
-    uart.write_str(" of 240 columns");
+    uart.write_str(" of ");
+    uart.write_u32(crate::lcd::WIDTH);
+    uart.write_str(" columns");
     write_ms(uart, ", max ", MAX_FRAME_MS.swap(0, Ordering::Relaxed));
     uart.write_line("");
     write_us_as_ms(uart, "[glass] longest compose ", MAX_COMPOSE_US.swap(0, Ordering::Relaxed));

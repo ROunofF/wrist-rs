@@ -1,5 +1,6 @@
-//! The Sharp LS012B7DD06A memory LCD, LCP-2619063C Rev C: pixels bit-banged from GPIO a
-//! column at a time on the cycle counter, `VCOM` from two LPTIMs on the LSE.
+//! The Sharp LS012B7DD06A memory LCD, LCP-2619063C Rev C, or with `panel-ls014` the
+//! LS014B7DD01, LCP-0620031B: pixels bit-banged from GPIO a column at a time on the cycle
+//! counter, `VCOM` from two LPTIMs on the LSE.
 #![allow(clippy::inline_always)]
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
@@ -39,6 +40,7 @@ const LINES: usize = wrist_panel::LINES;
 const PAIRS: usize = wrist_panel::PAIRS;
 const GCK_EDGES: u32 = wrist_panel::GCK_EDGES;
 const LAST_WRITTEN: u32 = wrist_panel::LAST_WRITTEN;
+const TAIL_FROM: u32 = wrist_panel::TAIL_FROM;
 /// Kept lines fast-forwarded between yields.
 const FAST_RUN: u32 = 32;
 
@@ -48,10 +50,14 @@ const fn cycles(ns: u32) -> u32 {
 }
 const INTB_HIGH: Duration = Duration::from_millis(timing::INTB_HIGH_MS as u64);
 
-/// LSE ticks a `VCOM` period: 0.5 Hz, Table 6-3-3's reflective minimum, and about 31 Hz,
-/// its transmissive row, while the light is on.
+/// LSE ticks a `VCOM` period: 0.5 Hz, Table 6-3-3's reflective minimum, and its transmissive
+/// row while the light is on: about 31 Hz for the LS012 (30 to 45 Hz), 60 Hz for the LS014
+/// (54 to 66 Hz).
 const PERIOD_LOW: u32 = 65_536;
+#[cfg(not(feature = "panel-ls014"))]
 const PERIOD_HIGH: u32 = 1_057;
+#[cfg(feature = "panel-ls014")]
+const PERIOD_HIGH: u32 = 546;
 const LPTIM_POLLS: u32 = 20_000;
 
 static VCOM_MODE: AtomicU8 = AtomicU8::new(Mode::Auto.as_u8());
@@ -362,7 +368,7 @@ impl Lcd {
                 continue;
             }
             pace = self::pace();
-            if matches!(edge, 1 | 2 | GCK_EDGES) {
+            if edge <= 2 || edge >= TAIL_FROM {
                 pace.wait(cycles(timing::GCK_HALF));
                 continue;
             }
